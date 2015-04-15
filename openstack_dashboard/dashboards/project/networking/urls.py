@@ -15,8 +15,8 @@
 #    under the License.
 
 from django.conf.urls.defaults import include  # noqa
-from django.conf.urls.defaults import patterns  # noqa
-from django.conf.urls.defaults import url  # noqa
+from django.conf.urls import patterns
+from django.conf.urls import url
 
 from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.networking.ports \
     import urls as port_urls
