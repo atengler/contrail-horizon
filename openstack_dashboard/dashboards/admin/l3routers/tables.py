@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,17 +12,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.template.defaultfilters import title  # noqa
-from django.utils.translation import ugettext_lazy as _  # noqa
+from django.utils.translation import ugettext_lazy as _
 
 from horizon import tables
 from openstack_dashboard import api
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers \
-    import tables as r_tables
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import tables as r_tables
 
 
 class DeleteRouter(r_tables.DeleteRouter):
     redirect_url = "horizon:admin:l3routers:index"
+    policy_rules = (("network", "delete_router"),)
+
+    def get_policy_target(self, request, datum=None):
+        project_id = None
+        if datum:
+            project_id = getattr(datum, 'tenant_id', None)
+        return {"project_id": project_id}
 
     def delete(self, request, obj_id):
         search_opts = {'device_owner': 'network:router_interface',
@@ -39,6 +42,10 @@ class DeleteRouter(r_tables.DeleteRouter):
         return True
 
 
+class EditRouter(r_tables.EditRouter):
+    url = "horizon:admin:l3routers:update"
+
+
 class UpdateRow(tables.Row):
     ajax = True
 
@@ -47,20 +54,11 @@ class UpdateRow(tables.Row):
         return router
 
 
-class RoutersTable(tables.DataTable):
+class RoutersTable(r_tables.RoutersTable):
     tenant = tables.Column("tenant_name", verbose_name=_("Project"))
     name = tables.Column("name",
                          verbose_name=_("Name"),
                          link="horizon:admin:l3routers:detail")
-    status = tables.Column("status",
-                           filters=(title,),
-                           verbose_name=_("Status"),
-                           status=True)
-    ext_net = tables.Column(r_tables.get_external_network,
-                            verbose_name=_("External Network"))
-
-    def get_object_display(self, obj):
-        return obj.name
 
     class Meta:
         name = "Routers"
@@ -68,4 +66,5 @@ class RoutersTable(tables.DataTable):
         status_columns = ["status"]
         row_class = UpdateRow
         table_actions = (DeleteRouter,)
-        row_actions = (DeleteRouter,)
+        row_actions = (EditRouter, DeleteRouter,)
+        Columns = ('tenant', 'name', 'status', 'distributed', 'ext_net')

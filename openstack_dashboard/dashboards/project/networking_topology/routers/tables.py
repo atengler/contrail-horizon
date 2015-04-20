@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 NTT Innovation Institute Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,17 +12,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.utils.translation import ugettext_lazy as _  # noqa
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import\
-    tables as r_tables
+from django.utils.translation import ugettext_lazy as _
+
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import tables
 
 
-class DeleteRouter(r_tables.DeleteRouter):
+class DeleteRouter(tables.DeleteRouter):
     redirect_url = "horizon:project:networking_topology:router"
 
 
-class RoutersTable(r_tables.RoutersTable):
+class RoutersTable(tables.RoutersTable):
     class Meta:
         name = "Routers"
-        verbose_name = _("NT_Routers")
+        verbose_name = _("Routers")
         status_columns = ["status"]
+        row_actions = (DeleteRouter,)

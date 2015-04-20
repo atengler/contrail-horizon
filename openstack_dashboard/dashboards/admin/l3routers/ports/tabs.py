@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,8 +13,7 @@
 #    under the License.
 
 from horizon import tabs
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers.ports \
-    import tabs as r_tabs
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers.ports import tabs as r_tabs
 
 
 class OverviewTab(r_tabs.OverviewTab):

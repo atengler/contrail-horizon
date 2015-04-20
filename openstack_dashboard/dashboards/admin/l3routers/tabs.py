@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,16 +12,23 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from horizon import tabs
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers \
-    import tabs as r_tabs
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.\
+    l3routers.extensions.routerrules import tables as rrtbl
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.l3routers.ports import tables as ptbl
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers.extensions.routerrules\
+    import tabs as rr_tabs
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import tabs as r_tabs
 
 
-class OverviewTab(r_tabs.OverviewTab):
-    template_name = ("admin/l3routers/_detail_overview.html")
-    redirect_url = 'horizon:admin:l3routers:index'
+class RouterRulesTab(rr_tabs.RouterRulesTab):
+    table_classes = (rrtbl.RouterRulesTable,)
 
 
-class RouterDetailTabs(tabs.TabGroup):
+class InterfacesTab(r_tabs.InterfacesTab):
+    table_classes = (ptbl.PortsTable,)
+
+
+class RouterDetailTabs(r_tabs.RouterDetailTabs):
     slug = "router_details"
-    tabs = (OverviewTab,)
+    tabs = (InterfacesTab, rr_tabs.RouterRulesTab)
+    sticky = True
