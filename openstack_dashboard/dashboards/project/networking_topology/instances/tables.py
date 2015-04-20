@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 NTT Innovation Institute Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,12 +12,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.utils.translation import ugettext_lazy as _  # noqa
-from openstack_dashboard.dashboards.project.instances import tables as i_tables
+from django.utils.translation import ugettext_lazy as _
+
+from openstack_dashboard.dashboards.project.instances import tables
 
 
-class InstancesTable(i_tables.InstancesTable):
+class InstancesTable(tables.InstancesTable):
     class Meta:
         name = "instances"
-        verbose_name = _("NT_Instances")
-        row_actions = (i_tables.TerminateInstance,)
+        verbose_name = _("Instances")
+        row_actions = (
+            tables.TerminateInstance,
+        )

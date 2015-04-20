@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 NTT Innovation Institute Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,16 +13,17 @@
 #    under the License.
 
 
-from django.utils.translation import ugettext_lazy as _  # noqa
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers.ports import\
-    tables as p_tables
+from django.utils.translation import ugettext_lazy as _
+
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers.ports import tables
 
 
-class RemoveInterface(p_tables.RemoveInterface):
+class RemoveInterface(tables.RemoveInterface):
     failure_url = 'horizon:project:networking_topology:router'
 
 
-class PortsTable(p_tables.PortsTable):
+class PortsTable(tables.PortsTable):
     class Meta:
         name = "interfaces"
-        verbose_name = _("NT_Interfaces")
+        verbose_name = _("Interfaces")
+        row_actions = (RemoveInterface, )

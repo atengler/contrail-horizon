@@ -8,8 +8,9 @@
 
 {% block main %}
 {% include "project/l3routers/_detail_overview.html" %}
-<hr>
-<div id="interfaces">
-   {{ interfaces_table.render }}
+<div class="row">
+  <div class="col-sm-12">
+  {{ tab_group.render }}
+  </div>
 </div>
 {% endblock %}

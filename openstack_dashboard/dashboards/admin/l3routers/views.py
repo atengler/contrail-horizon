@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -18,24 +16,20 @@
 Views for managing Neutron Routers.
 """
 
-from django.core.urlresolvers import reverse_lazy  # noqa
-from django.utils.translation import ugettext_lazy as _  # noqa
+from django.core.urlresolvers import reverse_lazy
+from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
 from openstack_dashboard import api
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.networking \
-    import views as n_views
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers \
-    import views as r_views
-
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.l3routers.ports \
-    import tables as ports_tables
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.l3routers \
-    import tables
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.networking import views as n_views
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.l3routers import forms as rforms
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.l3routers import tables as rtbl
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.admin.l3routers import tabs as rtabs
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import views as r_views
 
 
 class IndexView(r_views.IndexView, n_views.IndexView):
-    table_class = tables.RoutersTable
+    table_class = rtbl.RoutersTable
     template_name = 'admin/l3routers/index.html'
 
     def _get_routers(self, search_opts=None):
@@ -50,7 +44,7 @@ class IndexView(r_views.IndexView, n_views.IndexView):
             tenant_dict = self._get_tenant_list()
             ext_net_dict = self._list_external_networks()
             for r in routers:
-                 # Set tenant name
+                # Set tenant name
                 tenant = tenant_dict.get(r.tenant_id, None)
                 r.tenant_name = getattr(tenant, 'name', None)
                 # If name is empty use UUID as name
@@ -65,6 +59,12 @@ class IndexView(r_views.IndexView, n_views.IndexView):
 
 
 class DetailView(r_views.DetailView):
-    table_classes = (ports_tables.PortsTable, )
+    tab_group_class = rtabs.RouterDetailTabs
     template_name = 'admin/l3routers/detail.html'
     failure_url = reverse_lazy('horizon:admin:l3routers:index')
+
+
+class UpdateView(r_views.UpdateView):
+    form_class = rforms.UpdateForm
+    template_name = 'admin/l3routers/update.html'
+    success_url = reverse_lazy("horizon:admin:l3routers:index")

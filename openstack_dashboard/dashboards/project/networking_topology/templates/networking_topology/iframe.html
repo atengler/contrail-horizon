@@ -2,11 +2,11 @@
 <html>
   <head>
     <meta content='text/html; charset=utf-8' http-equiv='Content-Type' />
-    <script src='{{ STATIC_URL }}horizon/lib/jquery/jquery.min.js' type='text/javascript' charset="utf-8"></script>
+    <script src='{{ STATIC_URL }}horizon/lib/jquery/jquery.js' type='text/javascript' charset="utf-8"></script>
   </head>
   <body>
     {% include "horizon/_messages.html" %}
-    {% firstof table.render interfaces_table.render %}
+    {% firstof  table.render  interfaces_table.render tab_group.render%}
     {% include "project/networking_topology/_post_massage.html" %}
   </body>
 </html>
