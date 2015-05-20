@@ -18,16 +18,9 @@ from horizon import tables
 from openstack_dashboard import api
 from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import tables as r_tables
 
-
 class DeleteRouter(r_tables.DeleteRouter):
     redirect_url = "horizon:admin:l3routers:index"
     policy_rules = (("network", "delete_router"),)
-
-    def get_policy_target(self, request, datum=None):
-        project_id = None
-        if datum:
-            project_id = getattr(datum, 'tenant_id', None)
-        return {"project_id": project_id}
 
     def delete(self, request, obj_id):
         search_opts = {'device_owner': 'network:router_interface',
