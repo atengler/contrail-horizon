@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -16,13 +14,12 @@
 
 import logging
 
-from django.core.urlresolvers import reverse  # noqa
-from django.utils.translation import ugettext_lazy as _  # noqa
+from django.core.urlresolvers import reverse
+from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
 from horizon import forms
 from horizon import messages
-from horizon.forms import fields
 from openstack_dashboard import api
 
 LOG = logging.getLogger(__name__)
@@ -30,11 +27,11 @@ LOG = logging.getLogger(__name__)
 
 class AddInterface(forms.SelfHandlingForm):
     subnet_id = forms.ChoiceField(label=_("Subnet"))
-    ip_address = fields.IPField(
+    ip_address = forms.IPField(
         label=_("IP Address (optional)"), required=False, initial="",
-        help_text=_("You can specify an IP address of the interface "
-                    "created if you want (e.g. 192.168.0.254)."),
-        version=fields.IPv4 | fields.IPv6, mask=False)
+        help_text=_("Specify an IP address for the interface "
+                    "created (e.g. 192.168.0.254)."),
+        version=forms.IPv4 | forms.IPv6, mask=False)
     router_name = forms.CharField(label=_("Router Name"),
                                   widget=forms.TextInput(
                                       attrs={'readonly': 'readonly'}))
@@ -54,11 +51,15 @@ class AddInterface(forms.SelfHandlingForm):
         try:
             networks = api.neutron.network_list_for_tenant(request, tenant_id)
         except Exception as e:
-            msg = _('Failed to get network list %s') % e.message
+            msg = _('Failed to get network list %s') % e
             LOG.info(msg)
             messages.error(request, msg)
-            redirect = reverse(self.failure_url,
-                               args=[request.REQUEST['router_id']])
+            router_id = request.REQUEST.get('router_id',
+                                            self.initial.get('router_id'))
+            if router_id:
+                redirect = reverse(self.failure_url, args=[router_id])
+            else:
+                redirect = reverse('horizon:project:l3routers:index')
             exceptions.handle(request, msg, redirect=redirect)
             return
 
@@ -72,7 +73,7 @@ class AddInterface(forms.SelfHandlingForm):
         if choices:
             choices.insert(0, ("", _("Select Subnet")))
         else:
-            choices.insert(0, ("", _("No subnets available.")))
+            choices.insert(0, ("", _("No subnets available")))
         return choices
 
     def handle(self, request, data):
@@ -161,7 +162,7 @@ class SetGatewayForm(forms.SelfHandlingForm):
         try:
             networks = api.neutron.network_list(request, **search_opts)
         except Exception as e:
-            msg = _('Failed to get network list %s') % e.message
+            msg = _('Failed to get network list %s') % e
             LOG.info(msg)
             messages.error(request, msg)
             redirect = reverse(self.failure_url)
@@ -172,7 +173,7 @@ class SetGatewayForm(forms.SelfHandlingForm):
         if choices:
             choices.insert(0, ("", _("Select network")))
         else:
-            choices.insert(0, ("", _("No networks available.")))
+            choices.insert(0, ("", _("No networks available")))
         return choices
 
     def handle(self, request, data):
@@ -185,7 +186,7 @@ class SetGatewayForm(forms.SelfHandlingForm):
             messages.success(request, msg)
             return True
         except Exception as e:
-            msg = _('Failed to set gateway %s') % e.message
+            msg = _('Failed to set gateway %s') % e
             LOG.info(msg)
             redirect = reverse(self.failure_url)
             exceptions.handle(request, msg, redirect=redirect)

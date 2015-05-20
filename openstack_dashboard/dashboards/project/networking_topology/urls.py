@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration.
 # All Rights Reserved.
@@ -19,23 +17,24 @@
 #    under the License.
 
 
-from django.conf.urls.defaults import patterns  # noqa
-from django.conf.urls.defaults import url  # noqa
+from django.conf.urls import patterns  # noqa
+from django.conf.urls import url  # noqa
 
-from . import views
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.networking_topology import views
 
 
-urlpatterns = patterns('contrail_openstack_dashboard.openstack_dashboard.dashboards.project.networking_topology.views',
+urlpatterns = patterns(
+    'contrail_openstack_dashboard.openstack_dashboard.dashboards.project.networking_topology.views',
     url(r'^$', views.NetworkTopologyView.as_view(), name='index'),
+    url(r'^router$', views.RouterView.as_view(), name='router'),
     url(r'^instance$', views.InstanceView.as_view(), name='instance'),
+    url(r'^router/(?P<router_id>[^/]+)/$', views.RouterDetailView.as_view(),
+        name='detail'),
     url(r'^json$', views.JSONView.as_view(), name='json'),
     url(r'^launchinstance$', views.NTLaunchInstanceView.as_view(),
         name='launchinstance'),
     url(r'^createnetwork$', views.NTCreateNetworkView.as_view(),
         name='createnetwork'),
-    url(r'^router$', views.RouterView.as_view(), name='router'),
-    url(r'^router/(?P<router_id>[^/]+)/$', views.RouterDetailView.as_view(),
-        name='detail'),
     url(r'^createrouter$', views.NTCreateRouterView.as_view(),
         name='createrouter'),
 )

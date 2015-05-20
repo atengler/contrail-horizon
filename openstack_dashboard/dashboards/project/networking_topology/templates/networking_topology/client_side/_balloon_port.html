@@ -5,14 +5,14 @@
 
 {% block template %}
 {% jstemplate %}
-<table class="detaiInfoTable">
-  <caption>Interfaces</caption>
+<table class="detailInfoTable">
+  <caption>[[interfaces_label]]</caption>
   <tbody>
     [[#port]]
     <tr>
       <th>
         <span title="[[id]]">
-          [[id]]
+          <a href="[[url]]">[[id]]</a>
         </span>
       </th>
       <td>[[ip_address]]</td>
@@ -22,7 +22,7 @@
       </td>
       <td class="delete">
         [[#is_interface]]
-        <button class="delete-port btn btn-danger btn-mini" data-router-id="[[router_id]]"  data-port-id="[[id]]">Interface</button>
+        <button class="delete-port btn btn-danger btn-xs" data-router-id="[[router_id]]"  data-port-id="[[id]]">[[delete_interface_label]]</button>
         [[/is_interface]]
       </td>
     </tr>

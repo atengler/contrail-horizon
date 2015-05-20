@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,24 +12,35 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.conf.urls.defaults import patterns  # noqa
-from django.conf.urls.defaults import url  # noqa
+from django.conf.urls import patterns  # noqa
+from django.conf.urls import url  # noqa
 
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers.extensions.routerrules\
+    import views as rr_views
 from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers.ports \
     import views as port_views
 from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import views
 
 
+ROUTER_URL = r'^(?P<router_id>[^/]+)/%s'
+
+
 urlpatterns = patterns('horizon.dashboards.project.l3routers.views',
     url(r'^$', views.IndexView.as_view(), name='index'),
     url(r'^create/$', views.CreateView.as_view(), name='create'),
-    url(r'^(?P<router_id>[^/]+)/$',
+    url(ROUTER_URL % '$',
         views.DetailView.as_view(),
         name='detail'),
-    url(r'^(?P<router_id>[^/]+)/addinterface',
+    url(ROUTER_URL % 'update',
+        views.UpdateView.as_view(),
+        name='update'),
+    url(ROUTER_URL % 'addinterface',
         port_views.AddInterfaceView.as_view(),
         name='addinterface'),
-    url(r'^(?P<router_id>[^/]+)/setgateway',
+    url(ROUTER_URL % 'addrouterrule',
+        rr_views.AddRouterRuleView.as_view(),
+        name='addrouterrule'),
+    url(ROUTER_URL % 'setgateway',
         port_views.SetGatewayView.as_view(),
         name='setgateway'),
 )

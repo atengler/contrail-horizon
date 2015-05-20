@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,8 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.core.urlresolvers import reverse  # noqa
-from django.utils.translation import ugettext_lazy as _  # noqa
+from django.core.urlresolvers import reverse
+from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
 from horizon import tabs
@@ -26,7 +24,7 @@ class OverviewTab(tabs.Tab):
     name = _("Overview")
     slug = "overview"
     template_name = "project/networking/ports/_detail_overview.html"
-    failure_url = 'horizon:project:routers:index'
+    failure_url = 'horizon:project:l3routers:index'
 
     def get_context_data(self, request):
         port_id = self.tab_group.kwargs['port_id']

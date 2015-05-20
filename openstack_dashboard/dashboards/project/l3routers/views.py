@@ -1,6 +1,5 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
+# Copyright 2013,  Big Switch Networks, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -18,26 +17,26 @@
 Views for managing Neutron Routers.
 """
 
-from django.core.urlresolvers import reverse_lazy  # noqa
-from django.utils.datastructures import SortedDict  # noqa
-from django.utils.translation import ugettext_lazy as _  # noqa
+from django.core.urlresolvers import reverse_lazy
+from django.utils.datastructures import SortedDict
+from django.utils.translation import pgettext_lazy
+from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
 from horizon import forms
 from horizon import messages
 from horizon import tables
+from horizon import tabs
+from horizon.utils import memoized
 from openstack_dashboard import api
-
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers \
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers\
     import forms as project_forms
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers.ports \
-    import tables as port_tables
-from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers \
-    import tables as project_tables
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import tables as rtables
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.l3routers import tabs as rdtabs
 
 
 class IndexView(tables.DataTableView):
-    table_class = project_tables.RoutersTable
+    table_class = rtables.RoutersTable
     template_name = 'project/l3routers/index.html'
 
     def _get_routers(self, search_opts=None):
@@ -87,61 +86,92 @@ class IndexView(tables.DataTableView):
                 msg = _('External network "%(ext_net_id)s" expected but not '
                         'found for router "%(router_id)s".') % msg_params
                 messages.error(self.request, msg)
-                gateway_info['network'] = _('%s (Not Found)') % ext_net_id
+                # gateway_info['network'] is just the network name, so putting
+                # in a smallish error message in the table is reasonable.
+                gateway_info['network'] = pgettext_lazy(
+                    'External network not found',
+                    # Translators: The usage is "<UUID of ext_net> (Not Found)"
+                    u'%s (Not Found)') % ext_net_id
 
 
-class DetailView(tables.MultiTableView):
-    table_classes = (port_tables.PortsTable, )
+class DetailView(tabs.TabbedTableView):
+    tab_group_class = rdtabs.RouterDetailTabs
     template_name = 'project/l3routers/detail.html'
     failure_url = reverse_lazy('horizon:project:l3routers:index')
 
+    @memoized.memoized_method
     def _get_data(self):
-        if not hasattr(self, "_router"):
+        try:
+            router_id = self.kwargs['router_id']
+            router = api.neutron.router_get(self.request, router_id)
+            router.set_id_as_name_if_empty(length=0)
+        except Exception:
+            msg = _('Unable to retrieve details for router "%s".') \
+                % router_id
+            exceptions.handle(self.request, msg, redirect=self.failure_url)
+        if router.external_gateway_info:
+            ext_net_id = router.external_gateway_info['network_id']
             try:
-                router_id = self.kwargs['router_id']
-                router = api.neutron.router_get(self.request, router_id)
-                router.set_id_as_name_if_empty(length=0)
+                ext_net = api.neutron.network_get(self.request, ext_net_id,
+                                                  expand_subnet=False)
+                ext_net.set_id_as_name_if_empty(length=0)
+                router.external_gateway_info['network'] = ext_net.name
             except Exception:
-                msg = _('Unable to retrieve details for router "%s".') \
-                    % router_id
-                exceptions.handle(self.request, msg, redirect=self.failure_url)
-
-            if router.external_gateway_info:
-                ext_net_id = router.external_gateway_info['network_id']
-                try:
-                    ext_net = api.neutron.network_get(self.request, ext_net_id,
-                                                      expand_subnet=False)
-                    ext_net.set_id_as_name_if_empty(length=0)
-                    router.external_gateway_info['network'] = ext_net.name
-                except Exception:
-                    msg = _('Unable to retrieve an external network "%s".') \
-                        % ext_net_id
-                    exceptions.handle(self.request, msg)
-                    router.external_gateway_info['network'] = ext_net_id
-
-            self._router = router
-        return self._router
+                msg = _('Unable to retrieve an external network "%s".') \
+                    % ext_net_id
+                exceptions.handle(self.request, msg)
+                router.external_gateway_info['network'] = ext_net_id
+        return router
 
     def get_context_data(self, **kwargs):
         context = super(DetailView, self).get_context_data(**kwargs)
         context["router"] = self._get_data()
+        context['dvr_supported'] = api.neutron.get_feature_permission(
+            self.request, "dvr", "get")
+        context['ha_supported'] = api.neutron.get_feature_permission(
+            self.request, "l3-ha", "get")
         return context
 
-    def get_interfaces_data(self):
-        try:
-            device_id = self.kwargs['router_id']
-            ports = api.neutron.port_list(self.request,
-                                          device_id=device_id)
-        except Exception:
-            ports = []
-            msg = _('Port list can not be retrieved.')
-            exceptions.handle(self.request, msg)
-        for p in ports:
-            p.set_id_as_name_if_empty()
-        return ports
+    def get(self, request, *args, **kwargs):
+        router = self._get_data()
+        self.kwargs['router'] = router
+        return super(DetailView, self).get(request, *args, **kwargs)
 
 
 class CreateView(forms.ModalFormView):
     form_class = project_forms.CreateForm
     template_name = 'project/l3routers/create.html'
     success_url = reverse_lazy("horizon:project:l3routers:index")
+
+
+class UpdateView(forms.ModalFormView):
+    form_class = project_forms.UpdateForm
+    template_name = 'project/l3routers/update.html'
+    success_url = reverse_lazy("horizon:project:l3routers:index")
+
+    def get_context_data(self, **kwargs):
+        context = super(UpdateView, self).get_context_data(**kwargs)
+        context["router_id"] = self.kwargs['router_id']
+        return context
+
+    def _get_object(self, *args, **kwargs):
+        router_id = self.kwargs['router_id']
+        try:
+            return api.neutron.router_get(self.request, router_id)
+        except Exception:
+            redirect = self.success_url
+            msg = _('Unable to retrieve router details.')
+            exceptions.handle(self.request, msg, redirect=redirect)
+
+    def get_initial(self):
+        router = self._get_object()
+        initial = {'router_id': router['id'],
+                   'tenant_id': router['tenant_id'],
+                   'name': router['name'],
+                   'admin_state': router['admin_state_up']}
+        if hasattr(router, 'distributed'):
+            initial['mode'] = ('distributed' if router.distributed
+                               else 'centralized')
+        if hasattr(router, 'ha'):
+            initial['ha'] = router.ha
+        return initial

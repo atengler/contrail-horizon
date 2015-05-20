@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 #    Copyright 2013, Big Switch Networks, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,15 +12,24 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.utils.translation import ugettext_lazy as _  # noqa
+import logging
+
+from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
 from horizon import forms
-from horizon.forms import fields
 from horizon.utils import validators
 from horizon import workflows
 
 from openstack_dashboard import api
+from contrail_openstack_dashboard.openstack_dashboard.dashboards.project.lbaas import utils
+
+
+AVAILABLE_PROTOCOLS = ('HTTP', 'HTTPS', 'TCP')
+AVAILABLE_METHODS = ('ROUND_ROBIN', 'LEAST_CONNECTIONS', 'SOURCE_IP')
+
+
+LOG = logging.getLogger(__name__)
 
 
 class AddPoolAction(workflows.Action):
@@ -36,8 +43,9 @@ class AddPoolAction(workflows.Action):
     subnet_id = forms.ChoiceField(label=_("Subnet"))
     protocol = forms.ChoiceField(label=_("Protocol"))
     lb_method = forms.ChoiceField(label=_("Load Balancing Method"))
-    admin_state_up = forms.BooleanField(label=_("Admin State"),
-                                     initial=True, required=False)
+    # TODO(amotoki): make UP/DOWN translatable
+    admin_state_up = forms.ChoiceField(choices=[(True, 'UP'), (False, 'DOWN')],
+                                       label=_("Admin State"))
 
     def __init__(self, request, *args, **kwargs):
         super(AddPoolAction, self).__init__(request, *args, **kwargs)
@@ -57,14 +65,11 @@ class AddPoolAction(workflows.Action):
         self.fields['subnet_id'].choices = subnet_id_choices
 
         protocol_choices = [('', _("Select a Protocol"))]
-        protocol_choices.append(('HTTP', 'HTTP'))
-        protocol_choices.append(('HTTPS', 'HTTPS'))
+        [protocol_choices.append((p, p)) for p in AVAILABLE_PROTOCOLS]
         self.fields['protocol'].choices = protocol_choices
 
         lb_method_choices = [('', _("Select a Method"))]
-        lb_method_choices.append(('ROUND_ROBIN', 'ROUND_ROBIN'))
-        lb_method_choices.append(('LEAST_CONNECTIONS', 'LEAST_CONNECTIONS'))
-        lb_method_choices.append(('SOURCE_IP', 'SOURCE_IP'))
+        [lb_method_choices.append((m, m)) for m in AVAILABLE_METHODS]
         self.fields['lb_method'].choices = lb_method_choices
 
         # provider choice
@@ -94,9 +99,9 @@ class AddPoolAction(workflows.Action):
                         _("%s (default)") % default_provider))
         else:
             if providers is None:
-                msg = _("Provider for Load Balancer is not supported.")
+                msg = _("Provider for Load Balancer is not supported")
             else:
-                msg = _("No provider is available.")
+                msg = _("No provider is available")
             provider_choices = [('', msg)]
             self.fields['provider'].widget.attrs['readonly'] = True
         self.fields['provider'].choices = provider_choices
@@ -120,6 +125,7 @@ class AddPoolStep(workflows.Step):
 
     def contribute(self, data, context):
         context = super(AddPoolStep, self).contribute(data, context)
+        context['admin_state_up'] = (context['admin_state_up'] == 'True')
         if data:
             return context
 
@@ -150,56 +156,72 @@ class AddVipAction(workflows.Action):
     description = forms.CharField(
         initial="", required=False,
         max_length=80, label=_("Description"))
-    floatip_address = forms.ChoiceField(
-        label=_("VIP Address from Floating IPs"),
-        widget=forms.Select(attrs={'disabled': 'disabled'}),
-        required=False)
-    other_address = fields.IPField(required=False,
-                                   initial="",
-                                   version=fields.IPv4,
-                                   mask=False)
-    protocol_port = forms.IntegerField(label=_("Protocol Port"), min_value=1,
-                              help_text=_("Enter an integer value "
-                                          "between 1 and 65535."),
-                              validators=[validators.validate_port_range])
+    subnet_id = forms.ChoiceField(label=_("VIP Subnet"),
+                                  initial="",
+                                  required=False)
+    address = forms.IPField(label=_("Specify a free IP address "
+                                    "from the selected subnet"),
+                            version=forms.IPv4,
+                            mask=False)
+    protocol_port = forms.IntegerField(
+        label=_("Protocol Port"), min_value=1,
+        help_text=_("Enter an integer value "
+                    "between 1 and 65535."),
+        validators=[validators.validate_port_range])
     protocol = forms.ChoiceField(label=_("Protocol"))
     session_persistence = forms.ChoiceField(
-        required=False, initial={}, label=_("Session Persistence"))
+        required=False, initial={}, label=_("Session Persistence"),
+        widget=forms.Select(attrs={
+            'class': 'switchable',
+            'data-slug': 'persistence'
+        }))
     cookie_name = forms.CharField(
         initial="", required=False,
         max_length=80, label=_("Cookie Name"),
         help_text=_("Required for APP_COOKIE persistence;"
-                    " Ignored otherwise."))
+                    " Ignored otherwise."),
+        widget=forms.TextInput(attrs={
+            'class': 'switched',
+            'data-switch-on': 'persistence',
+            'data-persistence-app_cookie': 'APP_COOKIE',
+        }))
     connection_limit = forms.IntegerField(
-        min_value=-1, label=_("Connection Limit"),
+        required=False, min_value=-1, label=_("Connection Limit"),
         help_text=_("Maximum number of connections allowed "
                     "for the VIP or '-1' if the limit is not set"))
-    admin_state_up = forms.BooleanField(
-        label=_("Admin State"), initial=True, required=False)
+    # TODO(amotoki): make UP/DOWN translatable
+    admin_state_up = forms.ChoiceField(choices=[(True, 'UP'), (False, 'DOWN')],
+                                       label=_("Admin State"))
 
     def __init__(self, request, *args, **kwargs):
         super(AddVipAction, self).__init__(request, *args, **kwargs)
-
-        self.fields['other_address'].label = _("Specify a free IP address"
-                                               " from %s" %
-                                               args[0]['subnet'])
-
+        tenant_id = request.user.tenant_id
+        subnet_id_choices = [('', _("Select a Subnet"))]
+        try:
+            networks = api.neutron.network_list_for_tenant(request, tenant_id)
+        except Exception:
+            exceptions.handle(request,
+                              _('Unable to retrieve networks list.'))
+            networks = []
+        for n in networks:
+            for s in n['subnets']:
+                subnet_id_choices.append((s.id, s.cidr))
+        self.fields['subnet_id'].choices = subnet_id_choices
         protocol_choices = [('', _("Select a Protocol"))]
-        protocol_choices.append(('HTTP', 'HTTP'))
-        protocol_choices.append(('HTTPS', 'HTTPS'))
+        [protocol_choices.append((p, p)) for p in AVAILABLE_PROTOCOLS]
         self.fields['protocol'].choices = protocol_choices
 
         session_persistence_choices = [('', _("No Session Persistence"))]
         for mode in ('SOURCE_IP', 'HTTP_COOKIE', 'APP_COOKIE'):
-            session_persistence_choices.append((mode, mode))
+            session_persistence_choices.append((mode.lower(), mode))
         self.fields[
             'session_persistence'].choices = session_persistence_choices
 
-        floatip_address_choices = [('', _("Currently Not Supported"))]
-        self.fields['floatip_address'].choices = floatip_address_choices
-
     def clean(self):
         cleaned_data = super(AddVipAction, self).clean()
+        persistence = cleaned_data.get('session_persistence')
+        if persistence:
+            cleaned_data['session_persistence'] = persistence.upper()
         if (cleaned_data.get('session_persistence') == 'APP_COOKIE' and
                 not cleaned_data.get('cookie_name')):
             msg = _('Cookie name is required for APP_COOKIE persistence.')
@@ -210,24 +232,24 @@ class AddVipAction(workflows.Action):
         name = _("Specify VIP")
         permissions = ('openstack.services.network',)
         help_text = _("Create a VIP for this pool. "
-                      "Assign a name and description for the VIP. "
-                      "Specify an IP address and port for the VIP. "
+                      "Assign a name, description, IP address, port, "
+                      "and maximum connections allowed for the VIP. "
                       "Choose the protocol and session persistence "
-                      "method for the VIP."
-                      "Specify the max connections allowed. "
+                      "method for the VIP. "
                       "Admin State is UP (checked) by default.")
 
 
 class AddVipStep(workflows.Step):
     action_class = AddVipAction
     depends_on = ("pool_id", "subnet")
-    contributes = ("name", "description", "floatip_address",
-                   "other_address", "protocol_port", "protocol",
+    contributes = ("name", "description", "subnet_id",
+                   "address", "protocol_port", "protocol",
                    "session_persistence", "cookie_name",
                    "connection_limit", "admin_state_up")
 
     def contribute(self, data, context):
         context = super(AddVipStep, self).contribute(data, context)
+        context['admin_state_up'] = (context['admin_state_up'] == 'True')
         return context
 
 
@@ -245,23 +267,16 @@ class AddVip(workflows.Workflow):
         return message % name
 
     def handle(self, request, context):
-        if context['other_address'] == '':
-            context['address'] = context['floatip_address']
-        else:
-            if not context['floatip_address'] == '':
-                self.failure_message = _('Only one address can be specified. '
-                                         'Unable to add VIP "%s".')
+        if context['subnet_id'] == '':
+            try:
+                pool = api.lbaas.pool_get(request, context['pool_id'])
+                context['subnet_id'] = pool['subnet_id']
+            except Exception:
+                context['subnet_id'] = None
+                self.failure_message = _(
+                    'Unable to retrieve the specified pool. '
+                    'Unable to add VIP "%s".')
                 return False
-            else:
-                context['address'] = context['other_address']
-        try:
-            pool = api.lbaas.pool_get(request, context['pool_id'])
-            context['subnet_id'] = pool['subnet_id']
-        except Exception:
-            context['subnet_id'] = None
-            self.failure_message = _('Unable to retrieve the specified pool. '
-                                     'Unable to add VIP "%s".')
-            return False
 
         if context['session_persistence']:
             stype = context['session_persistence']
@@ -283,30 +298,60 @@ class AddVip(workflows.Workflow):
 
 class AddMemberAction(workflows.Action):
     pool_id = forms.ChoiceField(label=_("Pool"))
+    member_type = forms.ChoiceField(
+        label=_("Member Source"),
+        choices=[('server_list', _("Select from active instances")),
+                 ('member_address', _("Specify member IP address"))],
+        required=False,
+        widget=forms.Select(attrs={
+            'class': 'switchable',
+            'data-slug': 'membertype'
+        }))
     members = forms.MultipleChoiceField(
         label=_("Member(s)"),
-        required=True,
+        required=False,
         initial=["default"],
-        widget=forms.CheckboxSelectMultiple(),
-        error_messages={'required':
-                            _('At least one member must be specified')},
+        widget=forms.SelectMultiple(attrs={
+            'class': 'switched',
+            'data-switch-on': 'membertype',
+            'data-membertype-server_list': _("Member(s)"),
+        }),
         help_text=_("Select members for this pool "))
-    weight = forms.IntegerField(max_value=256, min_value=0, label=_("Weight"),
-                                help_text=_("Relative part of requests this "
-                                "pool member serves compared to others"))
-    protocol_port = forms.IntegerField(label=_("Protocol Port"), min_value=1,
-                              help_text=_("Enter an integer value "
-                                          "between 1 and 65535."),
-                              validators=[validators.validate_port_range])
-    admin_state_up = forms.BooleanField(label=_("Admin State"),
-                                        initial=True, required=False)
+    address = forms.IPField(required=False, label=_("Member address"),
+                            help_text=_("Specify member IP address"),
+                            widget=forms.TextInput(attrs={
+                                'class': 'switched',
+                                'data-switch-on': 'membertype',
+                                'data-membertype-member_address':
+                                _("Member address"),
+                            }),
+                            initial="", version=forms.IPv4 | forms.IPv6,
+                            mask=False)
+    weight = forms.IntegerField(
+        max_value=256, min_value=1, label=_("Weight"), required=False,
+        help_text=_("Relative part of requests this pool member serves "
+                    "compared to others. \nThe same weight will be applied to "
+                    "all the selected members and can be modified later. "
+                    "Weight must be in the range 1 to 256.")
+    )
+    protocol_port = forms.IntegerField(
+        label=_("Protocol Port"), min_value=1,
+        help_text=_("Enter an integer value between 1 and 65535. "
+                    "The same port will be used for all the selected "
+                    "members and can be modified later."),
+        validators=[validators.validate_port_range]
+    )
+    # TODO(amotoki): make UP/DOWN translatable
+    admin_state_up = forms.ChoiceField(choices=[(True, 'UP'), (False, 'DOWN')],
+                                       label=_("Admin State"))
 
     def __init__(self, request, *args, **kwargs):
         super(AddMemberAction, self).__init__(request, *args, **kwargs)
 
         pool_id_choices = [('', _("Select a Pool"))]
         try:
-            pools = api.lbaas.pools_get(request)
+            tenant_id = self.request.user.tenant_id
+            pools = api.lbaas.pool_list(request, tenant_id=tenant_id)
         except Exception:
             pools = []
             exceptions.handle(request,
@@ -326,13 +371,10 @@ class AddMemberAction(workflows.Action):
                               _('Unable to retrieve instances list.'))
 
         if len(servers) == 0:
-            self.fields['members'].label = _("No servers available. "
-                                             "Click Add to cancel.")
-            self.fields['members'].required = False
-            self.fields['members'].help_text = _("Select members "
-                                                 "for this pool ")
+            self.fields['members'].label = _(
+                "No servers available. To add a member, you "
+                "need at least one running instance.")
             self.fields['pool_id'].required = False
-            self.fields['weight'].required = False
             self.fields['protocol_port'].required = False
             return
 
@@ -342,24 +384,38 @@ class AddMemberAction(workflows.Action):
             members_choices,
             key=lambda member: member[1])
 
+    def clean(self):
+        cleaned_data = super(AddMemberAction, self).clean()
+        if (cleaned_data.get('member_type') == 'server_list' and
+                not cleaned_data.get('members')):
+            msg = _('At least one member must be specified')
+            self._errors['members'] = self.error_class([msg])
+        elif (cleaned_data.get('member_type') == 'member_address' and
+                not cleaned_data.get('address')):
+            msg = _('Member IP address must be specified')
+            self._errors['address'] = self.error_class([msg])
+        return cleaned_data
+
     class Meta:
         name = _("Add New Member")
         permissions = ('openstack.services.network',)
-        help_text = _("Add member to selected pool.\n\n"
+        help_text = _("Add member(s) to the selected pool.\n\n"
                       "Choose one or more listed instances to be "
                       "added to the pool as member(s). "
-                      "Assign a numeric weight for this member "
-                      "Specify the port number the member(s) "
-                      "operate on; e.g., 80.")
+                      "Assign a numeric weight and port number for the "
+                      "selected member(s) to operate(s) on; e.g., 80. \n\n"
+                      "Only one port can be associated with "
+                      "each instance.")
 
 
 class AddMemberStep(workflows.Step):
     action_class = AddMemberAction
-    contributes = ("pool_id", "members", "protocol_port", "weight",
-                   "admin_state_up")
+    contributes = ("pool_id", "member_type", "members", "address",
+                   "protocol_port", "weight", "admin_state_up")
 
     def contribute(self, data, context):
         context = super(AddMemberStep, self).contribute(data, context)
+        context['admin_state_up'] = (context['admin_state_up'] == 'True')
         return context
 
 
@@ -368,25 +424,60 @@ class AddMember(workflows.Workflow):
     name = _("Add Member")
     finalize_button_name = _("Add")
     success_message = _('Added member(s).')
-    failure_message = _('Unable to add member(s).')
+    failure_message = _('Unable to add member(s)')
     success_url = "horizon:project:lbaas:index"
     default_steps = (AddMemberStep,)
 
     def handle(self, request, context):
-        for m in context['members']:
-            params = {'device_id': m}
+        if context['member_type'] == 'server_list':
             try:
-                plist = api.neutron.port_list(request, **params)
+                pool = api.lbaas.pool_get(request, context['pool_id'])
+                subnet_id = pool['subnet_id']
             except Exception:
+                self.failure_message = _('Unable to retrieve '
+                                         'the specified pool.')
                 return False
-            if plist:
-                context['address'] = plist[0].fixed_ips[0]['ip_address']
+            for m in context['members']:
+                params = {'device_id': m}
+                try:
+                    plist = api.neutron.port_list(request, **params)
+                except Exception:
+                    return False
+
+                # Sort port list for each member. This is needed to avoid
+                # attachment of random ports in case of creation of several
+                # members attached to several networks.
+                plist = sorted(plist, key=lambda port: port.network_id)
+                psubnet = [p for p in plist for ips in p.fixed_ips
+                           if ips['subnet_id'] == subnet_id]
+
+                # If possible, select a port on pool subnet.
+                if psubnet:
+                    selected_port = psubnet[0]
+                elif plist:
+                    selected_port = plist[0]
+                else:
+                    selected_port = None
+
+                if selected_port:
+                    context['address'] = \
+                        selected_port.fixed_ips[0]['ip_address']
+                    try:
+                        api.lbaas.member_create(request, **context).id
+                    except Exception as e:
+                        msg = self.failure_message
+                        LOG.info('%s: %s' % (msg, e))
+                        return False
+            return True
+        else:
             try:
                 context['member_id'] = api.lbaas.member_create(
                     request, **context).id
-            except Exception:
+                return True
+            except Exception as e:
+                msg = self.failure_message
+                LOG.info('%s: %s' % (msg, e))
                 return False
-        return True
 
 
 class AddMonitorAction(workflows.Action):
@@ -453,8 +544,9 @@ class AddMonitorAction(workflows.Action):
             'data-type-http': _('Expected HTTP Status Codes'),
             'data-type-https': _('Expected HTTP Status Codes')
         }))
-    admin_state_up = forms.BooleanField(label=_("Admin State"),
-                                        initial=True, required=False)
+    # TODO(amotoki): make UP/DOWN translatable
+    admin_state_up = forms.ChoiceField(choices=[(True, 'UP'), (False, 'DOWN')],
+                                       label=_("Admin State"))
 
     def __init__(self, request, *args, **kwargs):
         super(AddMonitorAction, self).__init__(request, *args, **kwargs)
@@ -500,6 +592,7 @@ class AddMonitorStep(workflows.Step):
 
     def contribute(self, data, context):
         context = super(AddMonitorStep, self).contribute(data, context)
+        context['admin_state_up'] = (context['admin_state_up'] == 'True')
         if data:
             return context
 
@@ -531,14 +624,18 @@ class AddPMAssociationAction(workflows.Action):
 
     def populate_monitor_id_choices(self, request, context):
         self.fields['monitor_id'].label = _("Select a monitor template "
-                                            "for %s" % context['pool_name'])
+                                            "for %s") % context['pool_name']
 
         monitor_id_choices = [('', _("Select a Monitor"))]
         try:
-            monitors = api.lbaas.pool_health_monitors_get(request)
+            tenant_id = self.request.user.tenant_id
+            monitors = api.lbaas.pool_health_monitor_list(request,
+                                                          tenant_id=tenant_id)
+            pool_monitors_ids = [pm.id for pm in context['pool_monitors']]
             for m in monitors:
-                if m.id not in context['pool_monitors']:
-                    monitor_id_choices.append((m.id, m.id))
+                if m.id not in pool_monitors_ids:
+                    display_name = utils.get_monitor_display_name(m)
+                    monitor_id_choices.append((m.id, display_name))
         except Exception:
             exceptions.handle(request,
                               _('Unable to retrieve monitors list.'))
@@ -565,10 +662,10 @@ class AddPMAssociationStep(workflows.Step):
 
 class AddPMAssociation(workflows.Workflow):
     slug = "addassociation"
-    name = _("Add Association")
-    finalize_button_name = _("Add")
-    success_message = _('Added association.')
-    failure_message = _('Unable to add association.')
+    name = _("Associate Monitor")
+    finalize_button_name = _("Associate")
+    success_message = _('Associated monitor.')
+    failure_message = _('Unable to associate monitor.')
     success_url = "horizon:project:lbaas:index"
     default_steps = (AddPMAssociationStep,)
 
@@ -578,8 +675,8 @@ class AddPMAssociation(workflows.Workflow):
                 request, **context)
             return True
         except Exception:
-            exceptions.handle(request, _("Unable to add association."))
-        return False
+            exceptions.handle(request, _("Unable to associate monitor."))
+            return False
 
 
 class DeletePMAssociationAction(workflows.Action):
@@ -595,8 +692,12 @@ class DeletePMAssociationAction(workflows.Action):
 
         monitor_id_choices = [('', _("Select a Monitor"))]
         try:
-            for m_id in context['pool_monitors']:
-                monitor_id_choices.append((m_id, m_id))
+            monitors = api.lbaas.pool_health_monitor_list(request)
+            pool_monitors_ids = [pm.id for pm in context['pool_monitors']]
+            for m in monitors:
+                if m.id in pool_monitors_ids:
+                    display_name = utils.get_monitor_display_name(m)
+                    monitor_id_choices.append((m.id, display_name))
         except Exception:
             exceptions.handle(request,
                               _('Unable to retrieve monitors list.'))
@@ -624,10 +725,10 @@ class DeletePMAssociationStep(workflows.Step):
 
 class DeletePMAssociation(workflows.Workflow):
     slug = "deleteassociation"
-    name = _("Delete Association")
-    finalize_button_name = _("Delete")
-    success_message = _('Deleted association.')
-    failure_message = _('Unable to delete association.')
+    name = _("Disassociate Monitor")
+    finalize_button_name = _("Disassociate")
+    success_message = _('Disassociated monitor.')
+    failure_message = _('Unable to disassociate monitor.')
     success_url = "horizon:project:lbaas:index"
     default_steps = (DeletePMAssociationStep,)
 
@@ -637,5 +738,5 @@ class DeletePMAssociation(workflows.Workflow):
                 request, **context)
             return True
         except Exception:
-            exceptions.handle(request, _("Unable to delete association."))
+            exceptions.handle(request, _("Unable to disassociate monitor."))
         return False
