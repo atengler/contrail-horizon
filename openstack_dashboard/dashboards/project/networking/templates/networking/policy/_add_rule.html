@@ -9,6 +9,38 @@
 {% block modal_id %}create_policy_rule_modal{% endblock %}
 
 {% block modal-body %}
+<style type="text/css">
+#create_policy_rule_modal form.horizontal.split_half .form-group {
+  width: 334px;
+}
+#create_policy_rule_modal form.horizontal .form-group {
+  float: left;
+  margin-bottom:9px;
+}
+#create_policy_rule_modal input, #create_policy_rule_modal textarea, #create_policy_rule_modal select, #create_policy_rule_modal .uneditable-input{
+  display: inline-block;
+  width: 308px;
+  padding: 4px;
+  margin-bottom: 9px;
+  font-size: 13px;
+  line-height: 18px;
+  color: #555555;
+  border: 1px solid #cccccc;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  border-radius: 3px;}
+
+#create_policy_rule_modal .modal-footer .btn {
+  float: right;
+  margin-left: 5px;
+  margin-bottom: 0;
+}
+#create_policy_rule_modal input.btn.btn-primary.pull-right {
+  width: auto;
+  height: auto;
+  padding:3px 20px
+}
+</style>
 <fieldset>
   {% include "horizon/common/_form_fields.html" %}
 </fieldset>
