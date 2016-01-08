@@ -16,6 +16,7 @@ import logging
 
 from django.core.urlresolvers import reverse
 from django.template import defaultfilters as filters
+from django.utils.translation import pgettext_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 from neutronclient.common import exceptions as q_ext
@@ -23,8 +24,10 @@ from neutronclient.common import exceptions as q_ext
 from horizon import exceptions
 from horizon import messages
 from horizon import tables
+
 from openstack_dashboard import api
 from openstack_dashboard import policy
+from openstack_dashboard.usage import quotas
 
 LOG = logging.getLogger(__name__)
 
@@ -76,6 +79,20 @@ class CreateRouter(tables.LinkAction):
     classes = ("ajax-modal",)
     icon = "plus"
     policy_rules = (("network", "create_router"),)
+
+    def allowed(self, request, datum=None):
+        usages = quotas.tenant_quota_usages(request)
+        # when Settings.OPENSTACK_NEUTRON_NETWORK['enable_quotas'] = False
+        # usages['routers'] is empty
+        if usages.get('routers', {}).get('available', 1) <= 0:
+            if "disabled" not in self.classes:
+                self.classes = [c for c in self.classes] + ["disabled"]
+                self.verbose_name = _("Create Router (Quota exceeded)")
+        else:
+            self.verbose_name = _("Create Router")
+            self.classes = [c for c in self.classes if c != "disabled"]
+
+        return True
 
 
 class EditRouter(policy.PolicyTargetMixin, tables.LinkAction):
@@ -160,14 +177,32 @@ def get_external_network(router):
         return "-"
 
 
+class RoutersFilterAction(tables.FilterAction):
+
+    def filter(self, table, routers, filter_string):
+        """Naive case-insensitive search."""
+        query = filter_string.lower()
+        return [router for router in routers
+                if query in router.name.lower()]
+
+
 class RoutersTable(tables.DataTable):
+    STATUS_DISPLAY_CHOICES = (
+        ("active", pgettext_lazy("current status of router", u"Active")),
+        ("error", pgettext_lazy("current status of router", u"Error")),
+    )
+    ADMIN_STATE_DISPLAY_CHOICES = (
+        ("UP", pgettext_lazy("Admin state of a Router", u"UP")),
+        ("DOWN", pgettext_lazy("Admin state of a Router", u"DOWN")),
+    )
+
     name = tables.Column("name",
                          verbose_name=_("Name"),
                          link="horizon:project:l3routers:detail")
     status = tables.Column("status",
-                           filters=(filters.title,),
                            verbose_name=_("Status"),
-                           status=True)
+                           status=True,
+                           display_choices=STATUS_DISPLAY_CHOICES)
     distributed = tables.Column("distributed",
                                 filters=(filters.yesno, filters.capfirst),
                                 verbose_name=_("Distributed"))
@@ -177,6 +212,9 @@ class RoutersTable(tables.DataTable):
                        verbose_name=_("HA mode"))
     ext_net = tables.Column(get_external_network,
                             verbose_name=_("External Network"))
+    admin_state = tables.Column("admin_state",
+                                verbose_name=_("Admin State"),
+                                display_choices=ADMIN_STATE_DISPLAY_CHOICES)
 
     def __init__(self, request, data=None, needs_form_wrapper=None, **kwargs):
         super(RoutersTable, self).__init__(
@@ -192,10 +230,11 @@ class RoutersTable(tables.DataTable):
     def get_object_display(self, obj):
         return obj.name
 
-    class Meta:
+    class Meta(object):
         name = "Routers"
         verbose_name = _("Routers")
         status_columns = ["status"]
         row_class = UpdateRow
-        table_actions = (CreateRouter, DeleteRouter)
+        table_actions = (CreateRouter, DeleteRouter,
+                         RoutersFilterAction)
         row_actions = (SetGateway, ClearGateway, EditRouter, DeleteRouter)

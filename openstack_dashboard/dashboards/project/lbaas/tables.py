@@ -165,7 +165,7 @@ class UpdateMonitorLink(policy.PolicyTargetMixin, tables.LinkAction):
     policy_rules = (("network", "update_health_monitor"),)
 
     def get_link_url(self, monitor):
-        base_url = reverse("horizon:project:loadbalancers:updatemonitor",
+        base_url = reverse("horizon:project:lbaas:updatemonitor",
                            kwargs={'monitor_id': monitor.id})
         return base_url
 
